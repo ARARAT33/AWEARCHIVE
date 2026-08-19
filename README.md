@@ -1,70 +1,83 @@
 # AWEARCHIVE · AWELIB
 
-AWEARCHIVE is an AWEGame-style static library for archived files, media and web pages. The public UI is intentionally lightweight and deployable on Cloudflare Pages.
+AWEGame-style archive library for files, media and web pages, deployable as a static Cloudflare Pages site with Pages Functions.
 
 ## Architecture
 
-- `index.html` — public AWELIB search/library UI.
-- `admin.html` — separate admin UI. Supabase Auth authenticates the operator and PostgreSQL RLS decides whether that user is actually an admin.
-- `functions/media/[slug].js` — server-side media proxy; visitors receive an AWEARCHIVE URL rather than the original archive URL.
-- `functions/download/[slug].js` — server-side download proxy.
-- `functions/web/[slug].js` — webpage snapshot proxy for iframe viewing.
-- `functions/_shared/archive.js` — proxy implementation.
-- `supabase/migrations/...sql` — database schema and RLS.
+- `index.html` — public AWELIB UI; no admin link is exposed.
+- `admin.html` — private control panel, protected by a server-side secret-backed session.
+- `data/archive.json` — durable archive catalog. Admin writes go through a Pages Function to the GitHub Contents API; the browser never receives the GitHub token.
+- `functions/api/archive.js` — public catalog/search API.
+- `functions/api/admin/[[path]].js` — authenticated archive CRUD API.
+- `functions/api/analytics.js` — first-party analytics collector.
+- `functions/api/admin/analytics.js` — authenticated analytics dashboard API.
+- `functions/_shared/github.js` — server-side GitHub storage helper.
+- `functions/_shared/auth.js` — HMAC-signed admin session cookies.
+- `functions/media/[slug].js` — media proxy using AWEARCHIVE URLs.
+- `functions/download/[slug].js` — download proxy.
+- `functions/web/[slug].js` — current webpage proxy/viewer.
 
-## Important security rule
+## Cloudflare Secrets
 
-Do **not** put the admin username/password, Supabase secret key, service-role key, or any other private credential in `index.html`, `admin.html`, GitHub, or browser JavaScript.
+Create these **as encrypted Secrets**, not ordinary public variables:
 
-Supabase's current security model recommends publishable keys for browser code and secret keys only on server-side code. RLS must remain enabled. The repository therefore stores only the schema and application code; credentials are configured outside Git.
+- `ADMIN_USERNAME` — your chosen admin username.
+- `ADMIN_PASSWORD` — your chosen strong admin password.
+- `ADMIN_SESSION_SECRET` — a long random secret used to sign sessions.
+- `GITHUB_TOKEN` — a fine-grained GitHub token limited to this repository with Contents read/write access.
 
-## Supabase setup
+Optional ordinary variables:
 
-1. Use the Supabase project `webarchive` (`pgjrqtctkvbymlprzngi`) if you want to use the existing project.
-2. Wait until the project status is `ACTIVE`.
-3. Apply `supabase/migrations/20260819220000_awearchive.sql`.
-4. In Supabase Auth create exactly one operator account. If you want the initial login to be `ararat / 1111`, create that account yourself in the Auth dashboard; never paste that password into this repository.
-5. Copy that user's UUID and insert it into `public.admins` in SQL Editor:
+- `GITHUB_REPO` = `ARARAT33/AWEARCHIVE`
+- `GITHUB_BRANCH` = `main`
 
-```sql
-insert into public.admins(user_id) values ('YOUR_AUTH_USER_UUID');
-```
+Never put any of these secrets in HTML, JavaScript, GitHub source, or browser storage.
 
-Only a UUID present in `public.admins` can mutate archive records because all write policies call `is_archive_admin()`.
+## Admin
 
-## Browser configuration
+There is intentionally no Admin button or admin link on the public UI. Visit the private admin URL directly. The admin UI is `noindex,nofollow` and the API requires an HttpOnly, Secure, SameSite=Strict signed session cookie.
 
-`index.html` and `admin.html` currently contain the placeholders `__SUPABASE_URL__` and `__SUPABASE_PUBLISHABLE_KEY__`. Replace only these two public configuration values with your Supabase project URL and **publishable** key. Never use a secret/service-role key there.
-
-## Cloudflare Pages
-
-Deploy the repository as a Cloudflare Pages project with the repository root as the build directory and no framework build command. The Functions directory is `functions/`.
-
-Set the runtime variables needed by the Pages Functions:
-
-- `SUPABASE_URL` = your Supabase project URL
-- `SUPABASE_KEY` = Supabase publishable key (the proxy only reads public active rows)
-
-If you later add a server-side admin function, put a Supabase **secret** key in the Cloudflare Pages/Workers secret store, never in source.
+A custom subdomain such as `admin.example.com` can be attached in Cloudflare when you own a domain. A `*.pages.dev` project cannot arbitrarily create another child subdomain under `pages.dev`; without a custom domain use the private admin path directly.
 
 ## Archive workflow
 
-From the admin page you can add:
+Admin can add/edit/delete:
 
-- file
 - video
 - image
+- file
 - webpage
 - other
 
-Each item has a title, description, slug, source URL, optional thumbnail and tags.
+Every item contains a title, description, slug, tags and URL, plus optional thumbnail and status. The actual file bytes are not copied into GitHub; only the source URL and metadata are stored.
 
-For media, the public page uses `/media/<slug>` and downloads use `/download/<slug>`. The browser therefore addresses AWEARCHIVE instead of the original Archive.org URL. The original source URL remains server-side in the database.
+A successful admin save creates a Git commit in `data/archive.json`. Cloudflare Pages can then redeploy the updated catalog. Because the catalog is versioned in Git, normal code deployments do not erase archive entries.
 
-For web pages, `/web/<slug>` fetches the current source and presents it inside the AWEARCHIVE viewer. Some modern sites intentionally block iframe/proxy rendering through CSP, X-Frame-Options, authentication, robots rules, JavaScript checks, or anti-bot systems; those pages cannot be made universally embeddable without bypassing their security controls.
+Public media and downloads are served through AWEARCHIVE paths (`/media/<slug>` and `/download/<slug>`) so the original source URL is not shown in the public UI.
+
+## Analytics
+
+The public site sends first-party events for page views, item views and downloads. Pages Functions records the request IP, Cloudflare country/colo, referrer, landing path, search query, item and user-agent into daily `data/analytics/YYYY-MM-DD.json` files. The private dashboard aggregates:
+
+- unique visitors
+- total events
+- countries
+- viewed/downloaded items
+- entry paths
+- IP addresses
+- referrers
+- recent/live activity
+
+Analytics commits use Cloudflare's `[CF-Pages-Skip]` commit marker so they do not trigger normal Pages deployments. Cloudflare documents this skip mechanism for Git-integrated Pages. Treat IP/user-agent data as personal data and keep an appropriate retention/privacy policy for your visitors.
+
+## Cloudflare Pages
+
+Connect `ARARAT33/AWEARCHIVE` through Cloudflare Pages Git integration, production branch `main`, root directory `/`, no build command, output directory `.`. The Functions directory is automatically deployed with the Pages project.
+
+The public application needs no Supabase configuration. The only runtime secrets are the Cloudflare Secrets listed above.
 
 ## Durability
 
-GitHub contains the application code. Supabase PostgreSQL contains the archive catalog and metadata. Cloudflare Pages serves the public application. This separation means a GitHub outage does not erase the database, and changing/redeploying the Pages site does not erase archive metadata.
+GitHub stores the application and archive catalog. Cloudflare Pages serves it. The archive catalog is therefore independent of a Pages deployment: a new deployment replaces the site code but does not remove `data/archive.json`. GitHub history also provides a versioned recovery path for accidental catalog changes.
 
-For the strongest durability, keep periodic database backups/export snapshots in a second independent storage provider as well. No single hosting provider can honestly guarantee 100% uptime or zero data loss.
+No hosted service can honestly promise literal 100% uptime or zero data loss, so keep GitHub repository protection/backups enabled for the strongest recovery posture.
