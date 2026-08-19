@@ -1,0 +1,2 @@
+import {getItem,proxySource} from '../_shared/archive.js';
+export async function onRequest(context){const item=await getItem(context.env,context.params.slug);if(!item||!['file','image','video'].includes(item.item_type))return new Response('Not found',{status:404});return proxySource(item,context.request,'attachment')}
