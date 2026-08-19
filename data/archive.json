@@ -1,1 +1,16 @@
-[]
+[
+  {
+    "title": "AWE OS",
+    "slug": "awe-os",
+    "description": "AWEOS",
+    "type": "file",
+    "url": "https://github.com/ARARAT33/AWE_OS/archive/refs/heads/main.zip",
+    "tags": [
+      "AWEOS"
+    ],
+    "id": "d29dafeb-36dc-42a0-8993-0287f0ae6d8d",
+    "status": "active",
+    "createdAt": "2026-08-19T21:20:21.911Z",
+    "updatedAt": "2026-08-19T21:20:21.911Z"
+  }
+]
