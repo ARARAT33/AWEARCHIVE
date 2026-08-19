@@ -1,4 +1,9 @@
 create extension if not exists pgcrypto;
+create table if not exists public.admins(user_id uuid primary key references auth.users(id) on delete cascade,created_at timestamptz not null default now());
+alter table public.admins enable row level security;
+grant select on public.admins to authenticated;
+drop policy if exists "admin self read" on public.admins;
+create policy "admin self read" on public.admins for select to authenticated using((select auth.uid())=user_id);
 create table if not exists public.archive_items (
  id uuid primary key default gen_random_uuid(),
  slug text not null unique,
@@ -19,12 +24,9 @@ create table if not exists public.archive_items (
 alter table public.archive_items enable row level security;
 grant select on public.archive_items to anon, authenticated;
 grant insert,update,delete on public.archive_items to authenticated;
+drop policy if exists "public read active archive" on public.archive_items;
 create policy "public read active archive" on public.archive_items for select to anon,authenticated using(status='active');
 create or replace function public.is_archive_admin() returns boolean language sql stable security invoker set search_path=public as $$ select exists(select 1 from public.admins where user_id=(select auth.uid())); $$;
-create table if not exists public.admins(user_id uuid primary key references auth.users(id) on delete cascade,created_at timestamptz not null default now());
-alter table public.admins enable row level security;
-grant select on public.admins to authenticated;
-create policy "admin self read" on public.admins for select to authenticated using((select auth.uid())=user_id);
 create policy "admins write archive" on public.archive_items for insert to authenticated with check(public.is_archive_admin());
 create policy "admins update archive" on public.archive_items for update to authenticated using(public.is_archive_admin()) with check(public.is_archive_admin());
 create policy "admins delete archive" on public.archive_items for delete to authenticated using(public.is_archive_admin());
