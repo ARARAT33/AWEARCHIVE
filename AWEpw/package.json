@@ -1,0 +1,9 @@
+{
+  "name": "awepw-browser",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AWEpw - Chromium-based browser shell for AWEARCHIVE",
+  "main": "main.js",
+  "scripts": {"start": "electron ."},
+  "devDependencies": {"electron": "^38.0.0"}
+}
